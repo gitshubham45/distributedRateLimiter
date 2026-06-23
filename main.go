@@ -1,6 +1,7 @@
 package main
 
 import (
+	"rate-limite/handler"
 	"rate-limiter/zapLogger"
 
 	"github.com/gin-gonic/gin"
@@ -33,11 +34,8 @@ func main() {
 		})
 	})
 
-	r.Any("/api", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "OK",
-		})
-	})
+	r.PUT("/register-endpoint", handler.RegisterEndpoint)
+	r.Any("/", handler.HandleLimit)
 
 	port := ":8080"
 
