@@ -1,12 +1,10 @@
 package config
 
-import (
-	"rate-limiter/limiter"
+const (
+	PER_UNIT_TIME = "per_unit_time"
+	LEAKY_BUCKET = "leaky_bucket"
 )
 
-func InitStrategyMap() map[string]limiter.RequestLimiter {
-	strategyMap := make(map[string]limiter.RequestLimiter)
-	strategyMap["per_hour"] = &limiter.PerHourLimit{}
-	strategyMap["per_min"]
-	return strategyMap
+func InitConfig() {
+
 }
