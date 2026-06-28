@@ -2,41 +2,38 @@ package handler
 
 import (
 	"net/http"
+	"rate-limiter/config"
 	"rate-limiter/limiter"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-type limitConfigStore struct {
-	path              string
-	limitStrategyName string
-	limiter           limiter.RequestLimiter
-	limitConfig       StrategyConfig
+type limitConfig struct {
+	Path              string
+	TargetService     string
+	LimitStrategyName string
+	Limiter           limiter.RequestLimiter
+	Config            config.StrategyConfig
 }
 
 type Limiter struct {
-	limitRegistery map[string]limitConfigStore
-	logger         *zap.Logger
+	LimitRegistery map[string]limitConfig
+	Logger         *zap.Logger
 }
 
 func NewLimiter(l *zap.Logger) *Limiter {
 	return &Limiter{
-		limitRegistery: make(map[string]limitConfigStore),
-		logger:         l,
+		LimitRegistery: make(map[string]limitConfig),
+		Logger:         l,
 	}
 }
 
-type StrategyConfig struct {
-	Name     string `json:"name"`
-	Limit    int64  `json:"limit"`
-	Interval int64  `json:"interval"`
-}
-
 type EndpointRegisterReq struct {
-	Path     string         `json:"path"`
-	Method   string         `json:"method"`
-	Strategy StrategyConfig `json:"strategy"`
+	Path          string                `json:"path"`
+	Method        string                `json:"method"`
+	Strategy      config.StrategyConfig `json:"strategy"`
+	TargetService string                `json:"target_service"`
 }
 
 func (l *Limiter) RegisterEndpoint(c *gin.Context) {
@@ -46,9 +43,9 @@ func (l *Limiter) RegisterEndpoint(c *gin.Context) {
 		return
 	}
 
-	limitKey := req.Method + ":" + req.Path
+	rateLimiterKey := req.Method + ":" + req.Path
 
-	if _, found := l.limitRegistery[limitKey]; found {
+	if _, found := l.LimitRegistery[rateLimiterKey]; found {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Endpoint already registered"})
 		return
 	}
@@ -57,25 +54,26 @@ func (l *Limiter) RegisterEndpoint(c *gin.Context) {
 	reqLimiter := limiter.GetRequestLimiter(limitStrategyName)
 
 	if reqLimiter == nil {
-		l.logger.Error("Invalid strategy name", zap.String("strategy", limitStrategyName))
+		l.Logger.Error("Invalid strategy name", zap.String("strategy", limitStrategyName))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid strategy name"})
 		return
 	}
 
-	strategyConfig := StrategyConfig{
+	strategyConfig := config.StrategyConfig{
 		Name:     req.Strategy.Name,
 		Limit:    req.Strategy.Limit,
 		Interval: req.Strategy.Interval,
 	}
 
-	l.limitRegistery[limitKey] = limitConfigStore{
-		path:              req.Path,
-		limitStrategyName: req.Strategy.Name,
-		limiter:           reqLimiter,
-		limitConfig:       strategyConfig,
+	l.LimitRegistery[rateLimiterKey] = limitConfig{
+		Path:              req.Path,
+		LimitStrategyName: req.Strategy.Name,
+		Limiter:           reqLimiter,
+		Config:            strategyConfig,
+		TargetService:     req.TargetService,
 	}
 
-	l.logger.Info("Endpoint registered successfully", zap.String("endpoint", limitKey))
+	l.Logger.Info("Endpoint registered successfully", zap.String("endpoint", rateLimiterKey))
 
 	// TODO: Add endpoint to database
 	// TODO: Add strategy to cache

@@ -2,22 +2,44 @@ package handler
 
 import (
 	"net/http"
+	"rate-limiter/config"
+	"rate-limiter/proxy"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
-var strategyMap map[string]string
+func (l *Limiter) HandleLimit(c *gin.Context) {
 
-func ChooseStrategy(path string, strategy string) {
-}
+	path := c.Request.URL.Path
+	method := c.Request.Method
+	rateLimiterKey := method + ":" + path
 
-func HandleLimit(c *gin.Context) {
+	rateLimiter, ok := l.LimitRegistery[rateLimiterKey]
 
-	// path := c.Request.URL.Path
+	if !ok {
+		l.Logger.Error("Endpoint not registered", zap.String("endpoint", rateLimiterKey))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Endpoint not registered"})
+		return
+	}
 
-	// requestLimiter := GetLimiter(path)
+	l.Logger.Info("Endpoint found", zap.String("endpoint", rateLimiterKey))
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "ok",
-	})
+	strategyConfig := rateLimiter.Config
+	allowed := rateLimiter.Limiter.Allow(c, strategyConfig)
+
+	if !allowed {
+		l.Logger.Error("Rate limit exceeded", zap.String("endpoint", rateLimiterKey))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded"})
+		return
+	}
+
+	targetUrl := config.Services[rateLimiter.TargetService]
+	if targetUrl == "" {
+		l.Logger.Error("Target service not configured", zap.String("service", rateLimiter.TargetService))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Target service not configured"})
+		return
+	}
+
+	proxy.ForwardRequest(c, targetUrl)
 }

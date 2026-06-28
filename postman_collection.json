@@ -1,0 +1,113 @@
+{
+  "info": {
+    "name": "Distributed Rate Limiter",
+    "description": "Postman collection for the current rate limiter endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Register Endpoint - Per Unit Time",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"path\": \"{{target_path}}\",\n  \"method\": \"{{target_method}}\",\n  \"target_service\": \"{{target_service}}\",\n  \"strategy\": {\n    \"name\": \"per_unit_time\",\n    \"limit\": 10,\n    \"interval\": 60\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/register-endpoint",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "register-endpoint"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Register Endpoint - Leaky Bucket",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"path\": \"{{target_path}}\",\n  \"method\": \"{{target_method}}\",\n  \"target_service\": \"{{target_service}}\",\n  \"strategy\": {\n    \"name\": \"leaky_bucket\",\n    \"limit\": 10,\n    \"interval\": 60\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/register-endpoint",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "register-endpoint"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Call Registered Endpoint",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}{{target_path}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "{{target_path}}"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "target_path",
+      "value": "/users"
+    },
+    {
+      "key": "target_method",
+      "value": "GET"
+    },
+    {
+      "key": "target_service",
+      "value": "user"
+    }
+  ]
+}

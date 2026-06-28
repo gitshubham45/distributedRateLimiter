@@ -1,6 +1,7 @@
 package main
 
 import (
+	"rate-limiter/config"
 	"rate-limiter/handler"
 	"rate-limiter/zapLogger"
 
@@ -22,6 +23,10 @@ func main() {
 
 	defer logger.Sync()
 
+	if err := config.InitConfig("services.yaml"); err != nil {
+		logger.Fatal("error loading config", zap.Error(err))
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
@@ -36,8 +41,8 @@ func main() {
 		})
 	})
 
-	r.PUT("/register-endpoint", limiter.RegisterEndpoint)
-	r.Any("/", handler.HandleLimit)
+	r.POST("/register-endpoint", limiter.RegisterEndpoint)
+	r.NoRoute(limiter.HandleLimit)
 
 	port := ":8080"
 

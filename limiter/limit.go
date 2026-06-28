@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"rate-limiter/config"
+	"rate-limiter/limiter/strategy"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -12,51 +13,35 @@ var (
 	strategyMutex    sync.RWMutex
 )
 
-type LimitConfig struct {
-	limit    int64
-	interval int64
-}
-
 type RequestLimiter interface {
-	Allow(c *gin.Context, config LimitConfig) bool
-}
-
-type PerUnitTimeLimit struct{}
-
-func (l *PerUnitTimeLimit) Allow(c *gin.Context, config LimitConfig) bool {
-	return true
-}
-
-type LeakyBucket struct{}
-
-func (l *LeakyBucket) Allow(c *gin.Context, config LimitConfig) bool {
-	return true
+	Allow(c *gin.Context, config config.StrategyConfig) bool
 }
 
 func GetRequestLimiter(name string) RequestLimiter {
+	strategyMutex.RLock()
+	requestLimiter, found := strategyRegistry[name]
+	strategyMutex.RUnlock()
+
+	if found {
+		return requestLimiter
+	}
+
+	strategyMutex.Lock()
+	defer strategyMutex.Unlock()
+
+	if requestLimiter, found := strategyRegistry[name]; found {
+		return requestLimiter
+	}
+
 	switch name {
 	case config.PER_UNIT_TIME:
-		strategyMutex.RLock()
-		defer strategyMutex.RUnlock()
-		if _, found := strategyRegistry[name]; !found {
-			strategyRegistry[name] = &PerUnitTimeLimit{}
-		}
-		return strategyRegistry[name]
+		requestLimiter = strategy.NewPerUnitTimeLimit()
 	case config.LEAKY_BUCKET:
-		strategyMutex.RLock()
-		defer strategyMutex.RUnlock()
-
-		if _, found := strategyRegistry[name]; !found {
-			strategyRegistry[name] = &LeakyBucket{}
-		}
-		return strategyRegistry[name]
+		requestLimiter = &strategy.LeakyBucket{}
 	default:
-		strategyMutex.RLock()
-		defer strategyMutex.RUnlock()
-
-		if _, found := strategyRegistry[name]; !found {
-			strategyRegistry[name] = &PerUnitTimeLimit{}
-		}
-		return strategyRegistry[name]
+		requestLimiter = strategy.NewPerUnitTimeLimit()
 	}
+
+	strategyRegistry[name] = requestLimiter
+	return requestLimiter
 }
