@@ -1,8 +1,8 @@
 package limiter
 
 import (
-	"rate-limiter/config"
-	"rate-limiter/limiter/strategy"
+	"rate-limiter/internal/config"
+	"rate-limiter/internal/limiter/strategy"
 	"sync"
 
 	"github.com/gin-gonic/gin"

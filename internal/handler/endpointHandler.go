@@ -2,8 +2,8 @@ package handler
 
 import (
 	"net/http"
-	"rate-limiter/config"
-	"rate-limiter/limiter"
+	"rate-limiter/internal/config"
+	"rate-limiter/internal/limiter"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"

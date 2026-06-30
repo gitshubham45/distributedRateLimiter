@@ -1,7 +1,7 @@
 package strategy
 
 import (
-	"rate-limiter/config"
+	"rate-limiter/internal/config"
 
 	"github.com/gin-gonic/gin"
 )

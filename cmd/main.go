@@ -1,9 +1,9 @@
 package main
 
 import (
-	"rate-limiter/config"
-	"rate-limiter/handler"
-	"rate-limiter/zapLogger"
+	"rate-limiter/internal/config"
+	"rate-limiter/internal/handler"
+	"rate-limiter/internal/zapLogger"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -23,7 +23,7 @@ func main() {
 
 	defer logger.Sync()
 
-	if err := config.InitConfig("services.yaml"); err != nil {
+	if err := config.InitConfig("rate-limiter.yaml"); err != nil {
 		logger.Fatal("error loading config", zap.Error(err))
 	}
 

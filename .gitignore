@@ -1,2 +1,5 @@
 app.log
 __debug*
+*.docx
+*.pdf
+docs/

@@ -1,0 +1,321 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Distributed Rate Limiter Design Document</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.45;
+      color: #111827;
+    }
+    h1, h2, h3 {
+      color: #111827;
+    }
+    code, pre {
+      font-family: Menlo, Consolas, monospace;
+    }
+    pre {
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 12px 0;
+    }
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #f9fafb;
+    }
+  </style>
+</head>
+<body>
+  <h1>Distributed Rate Limiter Design Document</h1>
+
+  <h2>1. Project Overview</h2>
+  <p>
+    This project is a Go/Gin based rate limiter service. It registers endpoint-specific
+    rate-limit configuration, checks incoming requests, and forwards allowed requests
+    to backend services using a reverse proxy.
+  </p>
+  <p>
+    The current implementation is local and in-memory. It is structured so database-backed
+    endpoint registration and Redis-backed distributed counters can be added later.
+  </p>
+
+  <h2>2. Current Features</h2>
+  <ul>
+    <li>Register endpoint-specific rate-limit rules.</li>
+    <li>Select limiter strategy by name.</li>
+    <li>Current strategies: <code>per_unit_time</code> and placeholder <code>leaky_bucket</code>.</li>
+    <li>Track per-unit-time request windows in memory.</li>
+    <li>Load backend service targets from <code>services.yaml</code>.</li>
+    <li>Forward allowed requests using Go's reverse proxy.</li>
+    <li>Log request and application events using Zap.</li>
+  </ul>
+
+  <h2>3. API Endpoints</h2>
+
+  <h3>3.1 Health Check</h3>
+  <pre>GET /health</pre>
+  <p>Returns:</p>
+  <pre>{
+  "message": "OK"
+}</pre>
+
+  <h3>3.2 Register Endpoint</h3>
+  <pre>POST /register-endpoint</pre>
+  <p>Example request:</p>
+  <pre>{
+  "path": "/ww",
+  "method": "GET",
+  "target_service": "user",
+  "strategy": {
+    "name": "per_unit_time",
+    "limit": 10,
+    "interval": 60
+  }
+}</pre>
+
+  <table>
+    <tr>
+      <th>Field</th>
+      <th>Description</th>
+    </tr>
+    <tr>
+      <td>path</td>
+      <td>Public path handled by the rate limiter.</td>
+    </tr>
+    <tr>
+      <td>method</td>
+      <td>HTTP method used to build the registry key.</td>
+    </tr>
+    <tr>
+      <td>target_service</td>
+      <td>Service name from services.yaml.</td>
+    </tr>
+    <tr>
+      <td>strategy.name</td>
+      <td>Limiter strategy name, for example per_unit_time.</td>
+    </tr>
+    <tr>
+      <td>strategy.limit</td>
+      <td>Maximum requests allowed in the interval.</td>
+    </tr>
+    <tr>
+      <td>strategy.interval</td>
+      <td>Window size in seconds.</td>
+    </tr>
+  </table>
+
+  <h3>3.3 Call Registered Endpoint</h3>
+  <pre>GET /ww?client_id=test-user</pre>
+  <p>
+    The current per-unit-time limiter reads <code>client_id</code> from the query string.
+    If the endpoint is registered and the request is allowed, the request is forwarded
+    to the configured backend service.
+  </p>
+
+  <h2>4. Runtime Flow</h2>
+  <pre>Client request
+  ↓
+Gin route / NoRoute
+  ↓
+HandleLimit
+  ↓
+Lookup "METHOD:/path" in in-memory registry
+  ↓
+Call limiter strategy Allow(...)
+  ↓
+If allowed, resolve target_service from services.yaml
+  ↓
+Forward request to backend service</pre>
+
+  <h2>5. Data Model: Endpoint Registration</h2>
+  <pre>EndpointRegisterReq
+  ├── path
+  ├── method
+  ├── target_service
+  └── StrategyConfig
+        ├── name
+        ├── limit
+        └── interval
+
+EndpointRegisterReq
+  └── creates LimitConfig
+        ├── path
+        ├── target_service
+        ├── limit_strategy_name
+        ├── limiter
+        └── config
+
+LimitRegistry
+  └── key: "METHOD:/path"
+      value: LimitConfig</pre>
+
+  <p>Current behavior:</p>
+  <ul>
+    <li><code>POST /register-endpoint</code> accepts endpoint registration input.</li>
+    <li>The registry key is built as <code>method + ":" + path</code>.</li>
+    <li>The registered config is stored in memory in <code>Limiter.LimitRegistery</code>.</li>
+    <li>The database write is not implemented yet.</li>
+  </ul>
+
+  <h2>6. Data Model: Strategy Registry</h2>
+  <pre>StrategyRegistry
+  ├── "per_unit_time" -> PerUnitTimeLimit
+  └── "leaky_bucket"  -> LeakyBucket
+
+RequestLimiter interface
+  └── Allow(c, config) bool
+
+PerUnitTimeLimit implements RequestLimiter
+  ├── requestWindow map
+  └── mutex
+
+LeakyBucket implements RequestLimiter
+  └── currently placeholder</pre>
+
+  <p>
+    <code>limiter.GetRequestLimiter(name)</code> checks the strategy registry. If the strategy
+    object already exists, it returns the same object. Otherwise it creates and stores it.
+  </p>
+
+  <h2>7. Data Model: Runtime Rate Limiting</h2>
+  <pre>HTTP Request
+  ├── method
+  ├── path
+  └── query param: client_id
+          │
+          ▼
+Registry lookup by "METHOD:/path"
+          │
+          ▼
+LimitConfig
+  └── StrategyConfig
+        ├── name
+        ├── limit
+        └── interval
+          │
+          ▼
+PerUnitTimeLimit
+  └── requestWindow["METHOD:/path:client_id"]
+        ├── last_reset_at
+        └── count</pre>
+
+  <p>Current per-unit-time algorithm:</p>
+  <ol>
+    <li>Read <code>client_id</code> from the query string.</li>
+    <li>Build a request-window key from method, path, and client ID.</li>
+    <li>If no window exists, create one with count 1.</li>
+    <li>If the configured interval has expired, reset count to 1.</li>
+    <li>If count is below the configured limit, increment and allow.</li>
+    <li>Otherwise reject with HTTP 429.</li>
+  </ol>
+
+  <h2>8. Data Model: Service Routing</h2>
+  <pre>services.yaml
+  └── services:
+        user: "http://localhost:8081"
+          │
+          ▼
+config.Services map
+  └── "user" -> "http://localhost:8081"
+          ▲
+          │
+LimitConfig
+  └── target_service: "user"
+          │
+          ▼
+ReverseProxy
+  └── forwards request to target URL</pre>
+
+  <p>Example service configuration:</p>
+  <pre>services:
+  user: "http://localhost:8081"</pre>
+
+  <h2>9. Logging and Observability</h2>
+  <pre>HTTP Request
+  ├── method
+  ├── path
+  ├── query
+  ├── ip
+  └── user-agent
+       │
+       ▼
+ZapLogger middleware
+       ├── writes JSON logs to stdout
+       └── writes JSON logs to app.log
+
+Handler events
+  ├── endpoint registered
+  ├── endpoint not registered
+  ├── endpoint found
+  ├── rate limit exceeded
+  └── target service not configured</pre>
+
+  <h2>10. Future DB Model</h2>
+  <pre>SERVICES
+  ├── name PK
+  └── target_url
+
+ENDPOINTS
+  ├── id PK
+  ├── method
+  ├── path
+  ├── target_service FK -> SERVICES.name
+  ├── strategy_name
+  ├── limit
+  ├── interval
+  ├── created_at
+  └── updated_at</pre>
+
+  <p>
+    The database should be the source of truth for endpoint configuration.
+    The application should load endpoint config into memory to avoid fetching from the DB
+    on every request.
+  </p>
+
+  <h2>11. Future Redis Model</h2>
+  <pre>HTTP Request
+  └── increments Redis key
+
+Redis key
+  ├── key: rate_limit:{METHOD}:{path}:{client_id}:{window_start}
+  ├── count
+  └── ttl_seconds</pre>
+
+  <p>
+    Redis should be used for distributed runtime counters so multiple service instances
+    share the same rate-limit state.
+  </p>
+
+  <h2>12. Current Limitations</h2>
+  <ul>
+    <li>Endpoint registration is in memory only.</li>
+    <li>Rate-limit counters are in memory only.</li>
+    <li>Restarting the app clears registrations and counters.</li>
+    <li>Multiple service instances will not share counters.</li>
+    <li><code>leaky_bucket</code> is currently a placeholder.</li>
+    <li>There is no DB persistence yet.</li>
+    <li>There is no Redis-backed distributed counter yet.</li>
+  </ul>
+
+  <h2>13. Recommended Next Steps</h2>
+  <ol>
+    <li>Persist endpoint registrations in a database.</li>
+    <li>Load endpoint configs into an in-memory cache at startup.</li>
+    <li>Use Redis for distributed request counters.</li>
+    <li>Add cache invalidation when endpoint config changes.</li>
+    <li>Implement the leaky bucket strategy.</li>
+    <li>Add tests for registration, missing endpoint, allowed request, and rejected request.</li>
+  </ol>
+</body>
+</html>
