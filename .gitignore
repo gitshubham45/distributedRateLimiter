@@ -3,3 +3,4 @@ __debug*
 *.docx
 *.pdf
 docs/
+rate-limiter.yaml
